@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JSON辞書管理</title>
+<style>
+:root{color-scheme:dark;--bg:#10121a;--panel:#1a1e2b;--line:#30384b;--text:#f4f6ff;--muted:#9da8c0;--accent:#8b7cff;--danger:#ff667d}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+main{max-width:850px;margin:0 auto;padding:24px 16px 60px}h1{font-size:25px;margin:4px 0 6px}.sub{color:var(--muted);margin:0 0 22px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px;margin:14px 0}
+label{display:block;color:var(--muted);font-size:13px;margin:0 0 7px}
+input,select,textarea{width:100%;background:#111522;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:11px;font:inherit}
+button{border:0;border-radius:10px;padding:10px 13px;background:var(--accent);color:white;font-weight:650;font-size:14px;cursor:pointer}
+button.secondary{background:#30384b}button.danger{background:#713344}button.small{padding:7px 10px;font-size:12px}
+.row{display:flex;gap:9px;align-items:center;flex-wrap:wrap}.row>*{flex:1}.row .fit{flex:0 0 auto}
+.node{border:1px solid var(--line);border-radius:12px;padding:12px;margin:9px 0;background:#151a27}
+.node-head{display:flex;gap:8px;align-items:center;margin-bottom:9px}.node-head strong{font-size:13px;color:#c9c4ff}
+.children{padding-left:12px;border-left:2px solid #39415a;margin-left:5px}
+.actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}
+#preview{white-space:pre-wrap;overflow-wrap:anywhere;background:#0d111b;border-radius:10px;padding:13px;font:12px ui-monospace,monospace;max-height:320px;overflow:auto}
+.status{font-size:13px;color:var(--muted);margin-top:10px}.hidden{display:none!important}
+@media(max-width:520px){main{padding:18px 12px}.node{padding:10px}.children{padding-left:8px}}
+</style>
+</head>
+<body><main>
+<h1>JSON辞書管理</h1><p class="sub">認証番号ごとに、返却するJSONを登録できます。</p>
+<section class="panel">
+<label>管理者パスワード</label><input id="admin" type="password" placeholder="ADMIN_PASSWORD">
+<div class="row" style="margin-top:12px"><button id="load" class="secondary">登録済み一覧を読み込む</button><button id="new">新規作成</button></div>
+<div id="records" class="status"></div>
+</section>
+<section class="panel">
+<div class="row">
+<div><label>認証番号</label><input id="number" placeholder="例：839251" autocomplete="off"></div>
+<div><label>JSONの一番上の形式</label><select id="rootType"><option value="object">辞書（Object）</option><option value="array">序列（Array）</option></select></div>
+</div>
+<div style="margin-top:16px"><label>JSONの内容</label><div id="editor"></div></div>
+<div class="actions"><button id="addRoot">＋ 項目を追加</button><button id="save">保存する</button><button id="remove" class="danger">この番号を削除</button></div>
+<p id="message" class="status"></p>
+</section>
+<section class="panel"><label>生成されるJSON（プレビュー）</label><pre id="preview">{}</pre></section>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+let root={type:"object",children:[]};
+let serial=0;
+function node(type="string",key=""){return {id:++serial,type,key,value:"",children:[]};}
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+function render(){
+ const host=$("editor"); host.innerHTML="";
+ const wrap=document.createElement("div");wrap.className="node";
+ wrap.innerHTML=`<div class="node-head"><strong>ROOT / ${root.type==="object"?"辞書":"序列"}</strong></div><div class="children"></div>`;
+ host.appendChild(wrap);const children=wrap.querySelector(".children");
+ root.children.forEach(n=>children.appendChild(renderNode(n)));
+ updatePreview();
+}
+function renderNode(n){
+ const el=document.createElement("div");el.className="node";
+ const keyField=root.type==="object"||isNestedObject(n) ? `<input class="key" placeholder="キー名" value="${esc(n.key)}">` : "";
+ let typeOptions=`<option value="string">文字列</option><option value="number">数値</option><option value="object">辞書</option><option value="array">序列</option>`;
+ el.innerHTML=`<div class="node-head"><strong>項目</strong><span style="flex:1"></span><button class="small danger del">削除</button></div>
+ <div class="row">${keyField}<div><select class="kind">${typeOptions}</select></div></div>
+ <div class="value-area" style="margin-top:8px"></div><div class="children"></div>
+ <div class="actions"><button class="small secondary add-child">＋ 中に追加</button></div>`;
+ const key=el.querySelector(".key");if(key)key.addEventListener("input",()=>{n.key=key.value;updatePreview();});
+ const kind=el.querySelector(".kind");kind.value=n.type;
+ kind.addEventListener("change",()=>{n.type=kind.value;n.value="";n.children=[];render();});
+ const area=el.querySelector(".value-area"),kids=el.querySelector(".children"),add=el.querySelector(".add-child");
+ if(n.type==="object"||n.type==="array"){
+   area.innerHTML=`<span class="status">${n.type==="object"?"辞書：キーと値を追加":"序列：順番に値を追加"}</span>`;
+   n.children.forEach(c=>kids.appendChild(renderNode(c)));
+   add.classList.remove("hidden");add.textContent="＋ "+(n.type==="object"?"辞書の項目":"序列の要素");
+   add.onclick=()=>{n.children.push(node());render();};
+ }else{
+   area.innerHTML=`<input class="val" placeholder="${n.type==="number"?"数値を入力":"文字列を入力"}" value="${esc(n.value)}">`;
+   area.querySelector("input").addEventListener("input",e=>{n.value=e.target.value;updatePreview();});
+   add.classList.add("hidden");
+ }
+ el.querySelector(".del").onclick=()=>{removeNode(n.id);render();};
+ return el;
+}
+function isNestedObject(){return false;}
+function removeNode(id){function walk(arr){const i=arr.findIndex(x=>x.id===id);if(i>=0){arr.splice(i,1);return true;}return arr.some(x=>walk(x.children));}walk(root.children);}
+function toValue(n){if(n.type==="object"){let o={};n.children.forEach(c=>{if(c.key.trim())o[c.key]=toValue(c)});return o;}if(n.type==="array")return n.children.map(toValue);if(n.type==="number"){const v=Number(n.value);return n.value.trim()===""?0:v;}return n.value;}
+function build(){if(root.type==="array")return root.children.map(toValue);let o={};root.children.forEach(n=>{if(n.key.trim())o[n.key]=toValue(n)});return o;}
+function updatePreview(){try{$("preview").textContent=JSON.stringify(build(),null,2);}catch(e){$("preview").textContent="JSONを生成できません";}}
+$("rootType").onchange=e=>{root={type:e.target.value,children:[]};render();};
+$("addRoot").onclick=()=>{root.children.push(node());render();};
+$("new").onclick=()=>{$("number").value="";root={type:$("rootType").value,children:[]};render();$("message").textContent="新しいJSONを作成できます。";};
+function headers(){return {"Content-Type":"application/json","X-Admin-Password":$("admin").value};}
+$("save").onclick=async()=>{try{const r=await fetch("/api/records",{method:"PUT",headers:headers(),body:JSON.stringify({number:$("number").value,payload:build()})});const d=await r.json();if(!r.ok)throw Error(d.detail||"保存に失敗しました");$("message").textContent="保存しました。";}catch(e){$("message").textContent=e.message;}};
+$("remove").onclick=async()=>{if(!$("number").value||!confirm("この番号の登録内容を削除しますか？"))return;try{const r=await fetch("/api/records/"+encodeURIComponent($("number").value),{method:"DELETE",headers:headers()});const d=await r.json();if(!r.ok)throw Error(d.detail||"削除に失敗しました");$("message").textContent="削除しました。";}catch(e){$("message").textContent=e.message;}};
+$("load").onclick=async()=>{try{const r=await fetch("/api/records",{headers:headers()});const d=await r.json();if(!r.ok)throw Error(d.detail||"読み込みに失敗しました");$("records").innerHTML=d.map(x=>`<button class="small secondary pick" data-number="${esc(x.number)}">${esc(x.number)}</button>`).join(" ")||"登録なし";document.querySelectorAll(".pick").forEach(b=>b.onclick=()=>loadOne(b.dataset.number));}catch(e){$("records").textContent=e.message;}};
+async function loadOne(number){try{const r=await fetch("/api/records",{headers:headers()});const list=await r.json();const rec=list.find(x=>x.number===number);if(!rec)throw Error("見つかりません");$("number").value=number;const payload=rec.payload;root={type:Array.isArray(payload)?"array":"object",children:[]};$("rootType").value=root.type;function from(v,k=""){let n;if(Array.isArray(v)){n=node("array",k);n.children=v.map(x=>from(x));}else if(v&&typeof v==="object"){n=node("object",k);n.children=Object.entries(v).map(([a,b])=>from(b,a));}else if(typeof v==="number"){n=node("number",k);n.value=String(v);}else{n=node("string",k);n.value=String(v??"");}return n;}if(root.type==="array")root.children=payload.map(x=>from(x));else root.children=Object.entries(payload||{}).map(([k,v])=>from(v,k));render();$("message").textContent="読み込みました。";}catch(e){$("message").textContent=e.message;}}
+render();
+</script></body></html>
