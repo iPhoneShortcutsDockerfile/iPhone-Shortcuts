@@ -1,143 +1,144 @@
-import json
-import os
-import secrets
+import os, json, hmac
 from functools import wraps
-
+from flask import Flask, request, jsonify, send_from_directory
 import firebase_admin
-from dotenv import load_dotenv
-from flask import Flask, jsonify, request, send_from_directory
 from firebase_admin import credentials, firestore
 
-load_dotenv()
-
 app = Flask(__name__, static_folder="static")
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
-SERVICE_ACCOUNT_JSON = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON", "")
-DATABASE_ID = os.getenv("FIRESTORE_DATABASE_ID", "").strip()
+db = None
 
-_db = None
-_db_error = None
+def init_firestore():
+    global db
+    if db is not None:
+        return db
+    raw = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON", "").strip()
+    if not raw:
+        raise RuntimeError("FIREBASE_SERVICE_ACCOUNT_JSON is not configured")
+    info = json.loads(raw)
+    if not firebase_admin._apps:
+        cred = credentials.Certificate(info)
+        database_id = os.environ.get("FIRESTORE_DATABASE_ID")
+        if database_id:
+            firebase_admin.initialize_app(cred, {"projectId": info.get("project_id")})
+            db = firestore.client(database_id=database_id)
+        else:
+            firebase_admin.initialize_app(cred)
+            db = firestore.client()
+    else:
+        db = firestore.client()
+    return db
 
+def password_ok(value):
+    expected = os.environ.get("ADMIN_PASSWORD", "")
+    return bool(expected) and isinstance(value, str) and hmac.compare_digest(value, expected)
 
-def get_db():
-    global _db, _db_error
-    if _db is not None:
-        return _db
-    if _db_error:
-        raise RuntimeError(_db_error)
-    try:
-        if not SERVICE_ACCOUNT_JSON:
-            raise RuntimeError(
-                "FIREBASE_SERVICE_ACCOUNT_JSON is empty. Set the Firebase service account JSON."
-            )
-        info = json.loads(SERVICE_ACCOUNT_JSON)
-        if not firebase_admin._apps:
-            firebase_admin.initialize_app(credentials.Certificate(info))
-        _db = (
-            firestore.client(database_id=DATABASE_ID)
-            if DATABASE_ID
-            else firestore.client()
-        )
-        return _db
-    except Exception as exc:
-        _db_error = str(exc)
-        raise RuntimeError(_db_error)
-
+def supplied_password():
+    auth = request.headers.get("Authorization", "")
+    if auth.lower().startswith("bearer "):
+        return auth[7:].strip()
+    return request.headers.get("X-Admin-Password") or request.args.get("admin_password") or (
+        request.get_json(silent=True) or {}
+    ).get("admin_password", "")
 
 def admin_required(fn):
     @wraps(fn)
-    def wrapper(*args, **kwargs):
-        if not ADMIN_PASSWORD:
-            return jsonify({"error": "ADMIN_PASSWORD is not configured"}), 503
-        supplied = request.headers.get("X-Admin-Password", "")
-        if not supplied or not secrets.compare_digest(supplied, ADMIN_PASSWORD):
-            return jsonify({"error": "管理者パスワードが違います"}), 401
+    def wrapped(*args, **kwargs):
+        if not password_ok(supplied_password()):
+            return jsonify({"error": "管理者パスワードが正しくありません"}), 401
         return fn(*args, **kwargs)
-    return wrapper
-
-
-@app.get("/")
-def home():
-    return send_from_directory("static", "index.html")
-
+    return wrapped
 
 @app.get("/health")
 def health():
-    # UptimeRobot can monitor this endpoint.
     return jsonify({"ok": True})
 
+@app.get("/admin.site")
+@app.get("/admin")
+def admin():
+    return send_from_directory(app.static_folder, "index.html")
 
-@app.post("/api/lookup")
-def lookup():
-    body = request.get_json(silent=True)
-    if not isinstance(body, dict):
-        return jsonify({"ok": False, "error": "JSON object is required"}), 400
-    number = str(body.get("number", "")).strip()
-    if not number:
-        return jsonify({"ok": False, "error": "number is required"}), 400
-
-    try:
-        snap = get_db().collection("shortcut_json_records").document(number).get()
-    except Exception as exc:
-        app.logger.exception("Firestore lookup failed")
-        return jsonify({"ok": False, "error": "Backend database error"}), 503
-
-    if not snap.exists:
-        return jsonify({"ok": False, "error": "Invalid number"}), 401
-
-    payload = (snap.to_dict() or {}).get("payload")
-    # Return the stored JSON value itself, without an extra wrapper.
-    return jsonify(payload)
-
+@app.get("/")
+def home():
+    return jsonify({"service": "iPhone Shortcut JSON Backend", "admin": "/admin.site"})
 
 @app.get("/api/records")
 @admin_required
-def list_records():
+def get_records():
     try:
-        docs = get_db().collection("shortcut_json_records").stream()
-        result = [
-            {"number": doc.id, "payload": (doc.to_dict() or {}).get("payload")}
-            for doc in docs
-        ]
-        return jsonify(result)
-    except Exception:
-        app.logger.exception("Firestore list failed")
-        return jsonify({"error": "Backend database error"}), 503
-
+        docs = init_firestore().collection("shortcut_json_records").stream()
+        records = []
+        for doc in docs:
+            data = doc.to_dict() or {}
+            records.append({"number": doc.id, "json": data.get("payload")})
+        records.sort(key=lambda x: x["number"])
+        return jsonify({"records": records})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.put("/api/records")
 @admin_required
-def save_record():
-    body = request.get_json(silent=True)
-    if not isinstance(body, dict):
-        return jsonify({"error": "JSON object is required"}), 400
-    number = str(body.get("number", "")).strip()
-    if not number or len(number) > 100:
-        return jsonify({"error": "number must be 1 to 100 characters"}), 400
-    if "payload" not in body:
-        return jsonify({"error": "payload is required"}), 400
-
+def put_records():
+    body = request.get_json(silent=True) or {}
+    records = body.get("records")
+    if not isinstance(records, list):
+        return jsonify({"error": "records は配列で指定してください"}), 400
+    seen = set()
     try:
-        get_db().collection("shortcut_json_records").document(number).set({
-            "payload": body["payload"]
-        })
-        return jsonify({"ok": True})
-    except Exception:
-        app.logger.exception("Firestore save failed")
-        return jsonify({"error": "Backend database error"}), 503
+        store = init_firestore().collection("shortcut_json_records")
+        batch = init_firestore().batch()
+        for item in records:
+            if not isinstance(item, dict):
+                return jsonify({"error": "各項目はオブジェクトで指定してください"}), 400
+            number = str(item.get("number", "")).strip()
+            payload = item.get("json")
+            if not number or len(number) > 200:
+                return jsonify({"error": "認証番号が空、または長すぎます"}), 400
+            if number in seen:
+                return jsonify({"error": "認証番号が重複しています: " + number}), 400
+            seen.add(number)
+            if not isinstance(payload, (dict, list)):
+                return jsonify({"error": "JSON内容はObjectまたはArrayにしてください"}), 400
+            batch.set(store.document(number), {"payload": payload})
+        # Save current records as a complete replacement.
+        existing = list(store.stream())
+        for doc in existing:
+            if doc.id not in seen:
+                batch.delete(store.document(doc.id))
+        batch.commit()
+        return jsonify({"ok": True, "count": len(records)})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-
-@app.delete("/api/records/<path:number>")
+@app.post("/api/shortcuts")
 @admin_required
-def delete_record(number):
+def shortcut_write():
+    body = request.get_json(silent=True) or {}
+    number = str(body.get("number", "")).strip()
+    payload = body.get("json", body.get("payload"))
+    if not number:
+        return jsonify({"error": "number が必要です"}), 400
+    if not isinstance(payload, (dict, list)):
+        return jsonify({"error": "json はObjectまたはArrayで指定してください"}), 400
     try:
-        get_db().collection("shortcut_json_records").document(number).delete()
-        return jsonify({"ok": True})
-    except Exception:
-        app.logger.exception("Firestore delete failed")
-        return jsonify({"error": "Backend database error"}), 503
+        # .set replaces the entire old payload; it never merges.
+        init_firestore().collection("shortcut_json_records").document(number).set({"payload": payload})
+        return jsonify({"ok": True, "number": number, "replaced": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
+@app.post("/api/lookup")
+def lookup():
+    body = request.get_json(silent=True) or {}
+    number = str(body.get("number", body.get("auth_number", ""))).strip()
+    if not number:
+        return jsonify({"error": "number が必要です"}), 400
+    try:
+        doc = init_firestore().collection("shortcut_json_records").document(number).get()
+        if not doc.exists:
+            return jsonify({"error": "該当する認証番号がありません"}), 404
+        return jsonify(doc.to_dict().get("payload"))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", "8000"))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))

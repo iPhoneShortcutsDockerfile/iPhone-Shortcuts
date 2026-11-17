@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: iphone-shortcut-json-backend
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --bind 0.0.0.0:$PORT main:app
