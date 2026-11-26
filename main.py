@@ -70,6 +70,11 @@ def valid_dictionary(value):
     )
 
 
+def valid_text_dictionary(value):
+    """Backward-compatible validator name for nested Text dictionaries."""
+    return valid_dictionary(value)
+
+
 def dictionary_matches(expected, incoming):
     """Match configured keys recursively; extra incoming keys are allowed."""
     if not isinstance(expected, dict) or not isinstance(incoming, dict):
@@ -213,11 +218,8 @@ def lookup():
             if not valid_text_dictionary(expected) or not valid_dictionary(response):
                 continue
             # A rule matches when every configured POST key/value is present and identical.
-            if expected and all(
-                isinstance(incoming.get(key), str) and incoming.get(key) == value
-                for key, value in expected.items()
-            ):
-                matches.append((len(expected), doc.id, response))
+            if expected and dictionary_matches(expected, incoming):
+                matches.append((sum(1 for _ in flatten_keys(expected)), doc.id, response))
 
         if not matches:
             return jsonify({"error": "一致するPOST設定がありません"}), 404
