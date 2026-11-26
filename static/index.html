@@ -84,6 +84,15 @@ function render(){
   const top=el('div','recordtop');top.append(el('div','recordtitle','レコード '+(index+1)));
   const del=el('button','danger','レコード削除');del.addEventListener('click',()=>{records.splice(index,1);render()});top.append(del);card.append(top);
   const nl=el('label','label','認証コード');const number=el('input','number');number.placeholder='例：72763';number.value=r.number;number.addEventListener('input',()=>r.number=number.value);card.append(nl,number);
+  const quickAdd=el('button','ghost','＋ 追加');
+  quickAdd.style.marginTop='9px';
+  quickAdd.addEventListener('click',()=>{
+   if(r.mode==='text'){r.mode='object';r.text='';r.rows=[];}
+   if(r.mode==='object')r.rows.push({key:'',value:'',type:'text'});
+   else r.rows.push({value:'',type:'text'});
+   render();
+  });
+  card.append(quickAdd);
   const tl=el('label','label','保存するデータ形式');tl.style.marginTop='13px';
   const typebar=el('div','typebar');
   const mode=optionSelect(r.mode,[['object','Object（キーと値）'],['array','Array（値のリスト）'],['text','Text（文章）']],v=>{r.mode=v;r.rows=[];r.text='';render()});
@@ -114,9 +123,6 @@ function render(){
     fields.append(field);
    });
    card.append(fields);
-   const add=el('div','addrow');
-   const addbtn=el('button','ghost',r.mode==='object'?'＋ キーと値を追加':'＋ 値を追加');
-   addbtn.addEventListener('click',()=>{r.rows.push(r.mode==='object'?{key:'',value:'',type:'text'}:{value:'',type:'text'});render()});add.append(addbtn);card.append(add);
   }
   list.append(card);
  });
