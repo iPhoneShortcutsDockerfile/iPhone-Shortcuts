@@ -1,77 +1,156 @@
 <!doctype html>
-<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>JSON管理</title>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>JSONレコード管理</title>
 <style>
-:root{color-scheme:dark;font-family:system-ui,-apple-system,sans-serif;background:#0b1020;color:#eef2ff}
-*{box-sizing:border-box}body{margin:0;padding:22px;max-width:920px;margin:auto}
-h1{font-size:24px;margin:0 0 18px}.top{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:18px}
-input,textarea,select,button{font:inherit;border-radius:10px;border:1px solid #34405c;background:#151e33;color:#eef2ff;padding:11px}
-input{min-width:0}#password{width:min(100%,360px)}button{cursor:pointer;background:#5b5ce2;border:0;font-weight:650}button.secondary{background:#26334e}button.danger{background:#8d3349}
-.record{border:1px solid #2b3854;border-radius:16px;padding:16px;margin:14px 0;background:#111a2d}
-.head{display:grid;grid-template-columns:minmax(140px,1fr) minmax(130px,180px);gap:10px;margin-bottom:12px}
-textarea{width:100%;min-height:150px;resize:vertical;font-family:ui-monospace,monospace}
-.jsonlabel{display:flex;justify-content:space-between;align-items:center;margin:10px 0 7px;color:#b9c6e2}
-.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:12px}
-#status{color:#9eadd0;min-height:24px}.hint{color:#91a1c2;font-size:13px}
-@media(max-width:560px){body{padding:14px}.head{grid-template-columns:1fr}.top{align-items:stretch}#password{width:100%}}
-</style></head><body>
-<h1>JSON管理</h1>
-<div class="top">
+:root{color-scheme:dark;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#080b12;color:#f3f5fb}
+*{box-sizing:border-box}
+body{margin:0 auto;padding:22px 16px 60px;max-width:850px}
+h1{font-size:25px;margin:4px 0 5px}.sub{color:#9ba7bc;font-size:13px;margin:0 0 20px}
+.toolbar{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
+input,textarea,select,button{font:inherit;color:inherit;border:1px solid #30394b;border-radius:11px;background:#151b28;padding:11px}
+input,textarea{width:100%;min-width:0}
+button{cursor:pointer;background:#665cf0;border:0;font-weight:650}
+button.secondary{background:#252e40}button.danger{background:#783448}button.ghost{background:#1a2630;color:#b9f3d1}
+#password{flex:1;min-width:190px}
+#status{min-height:24px;color:#aebbd0;font-size:13px;margin:10px 0}
+.record{background:#111722;border:1px solid #2b3548;border-radius:18px;padding:16px;margin:14px 0;box-shadow:0 8px 24px #0002}
+.recordtop{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px}
+.recordtitle{font-size:14px;font-weight:750;color:#dce5f6}
+.number{margin-bottom:14px}
+.label{font-size:12px;color:#9eabc1;margin:0 0 7px;display:block}
+.typebar{display:flex;gap:8px;align-items:center;margin-bottom:12px}
+.typebar select{flex:1}
+.fields{display:grid;gap:9px}
+.field{background:#182131;border:1px solid #2b374c;border-radius:13px;padding:10px;display:grid;grid-template-columns:minmax(90px, .8fr) minmax(0,1.3fr) auto;gap:8px;align-items:start}
+.field.arrayfield{grid-template-columns:minmax(0,1fr) auto}
+.field input,.field select,.field textarea{padding:9px;border-radius:9px}
+.field textarea{min-height:72px;font-family:ui-monospace,monospace}
+.valuebox{display:grid;gap:6px;min-width:0}
+.removefield{background:#49303c;padding:8px 10px}
+.addrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.textpayload{min-height:110px;resize:vertical}
+.footer{display:flex;gap:9px;flex-wrap:wrap;margin-top:18px}
+.small{font-size:12px;color:#91a0b8;line-height:1.6;margin-top:18px}
+@media(max-width:560px){body{padding:17px 12px 48px}.toolbar>*{width:100%}.field{grid-template-columns:1fr auto}.field .key{grid-column:1/-1}.valuebox{grid-column:1}.removefield{grid-column:2;grid-row:1/3;align-self:center}.record{padding:13px}}
+</style>
+</head>
+<body>
+<h1>レコード管理</h1>
+<p class="sub">認証コードごとにPOSTデータを編集できます。保存するとFirestoreに反映されます。</p>
+
+<div class="toolbar">
   <input id="password" type="password" placeholder="管理者パスワード" autocomplete="current-password">
   <button id="load" class="secondary">読み込み</button>
   <button id="save">すべて保存</button>
 </div>
-<div id="status">管理者パスワードを入力してください。</div>
+<div id="status">管理者パスワードを入力して読み込んでください。</div>
 <div id="records"></div>
-<div class="actions"><button id="add" class="secondary">＋追加</button></div>
-<p class="hint">各ブロックに認証番号とJSON内容を入力します。JSON形式はObjectまたはArrayに対応。保存時、一覧全体を置き換えます。</p>
+<div class="footer">
+  <button id="add" class="secondary">＋ 認証コードを追加</button>
+</div>
+<p class="small">Object・Array・Textに対応。Objectではキーと値を個別に追加でき、Arrayでは値を順番に追加できます。保存時は一覧全体を置き換えます。既存レコードを残したい場合は、読み込み後に編集してください。</p>
+
 <script>
 const $=id=>document.getElementById(id), list=$('records');
 let records=[];
-const auth=()=>({'Authorization':'Bearer '+$('password').value,'Content-Type':'application/json'});
-function status(s){$('status').textContent=s}
-function pretty(v){return JSON.stringify(v,null,2)}
-function parse(text){const v=JSON.parse(text);if(v===null||typeof v!=='object')throw Error('JSONの最上位はObjectまたはArrayにしてください');return v}
+const status=s=>$('status').textContent=s;
+const headers=()=>({'Authorization':$('password').value,'Content-Type':'application/json'});
+const clone=v=>JSON.parse(JSON.stringify(v));
+function kind(v){if(v===null)return'null';if(Array.isArray(v)||typeof v==='object')return'json';if(typeof v==='number')return'number';if(typeof v==='boolean')return'boolean';return'text'}
+function rowsFrom(v){
+ if(Array.isArray(v))return v.map(value=>({value,type:kind(value)}));
+ if(v&&typeof v==='object')return Object.entries(v).map(([key,value])=>({key,value,type:kind(value)}));
+ return [];
+}
+function makeRecord(number='',payload={}){return{number:String(number),mode:typeof payload==='string'?'text':Array.isArray(payload)?'array':'object',text:typeof payload==='string'?payload:'',rows:rowsFrom(payload)}}
+function el(tag,cls,text){const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n}
+function optionSelect(value,opts,onchange){
+ const s=el('select');opts.forEach(([v,t])=>{const o=el('option','',t);o.value=v;s.append(o)});s.value=value;s.addEventListener('change',()=>onchange(s.value));return s;
+}
+function readValue(row){
+ if(row.type==='null')return null;
+ if(row.type==='number'){const n=Number(row.value);if(!Number.isFinite(n))throw Error('数値として正しくない値があります');return n}
+ if(row.type==='boolean')return row.value===true||row.value==='true';
+ if(row.type==='json'){if(typeof row.value==='string'){try{return JSON.parse(row.value)}catch(e){throw Error('JSON形式の値を確認してください')}}return row.value}
+ return String(row.value??'');
+}
 function render(){
  list.innerHTML='';
- records.forEach((r,i)=>{
-  const card=document.createElement('section');card.className='record';
-  const head=document.createElement('div');head.className='head';
-  const number=document.createElement('input');number.placeholder='認証番号';number.value=r.number||'';number.setAttribute('aria-label','認証番号');
-  number.addEventListener('input',()=>records[i].number=number.value);
-  const format=document.createElement('select');format.innerHTML='<option value="object">JSON形式：Object</option><option value="array">JSON形式：Array</option>';
-  format.value=Array.isArray(r.json)?'array':'object';
-  const area=document.createElement('textarea');area.spellcheck=false;area.value=pretty(r.json??{});
-  format.addEventListener('change',()=>{
-    try{let v=parse(area.value);if(format.value==='array'&&!Array.isArray(v))v=[];if(format.value==='object'&&(Array.isArray(v)||v===null))v={};area.value=pretty(v);records[i].json=v}
-    catch(e){area.value=format.value==='array'?'[]':'{}';records[i].json=format.value==='array'?[]:{}}
-  });
-  area.addEventListener('input',()=>{try{records[i].json=parse(area.value);area.style.borderColor='#34405c'}catch(e){area.style.borderColor='#c34d65'}});
-  const label=document.createElement('div');label.className='jsonlabel';label.textContent='JSON内容';
-  const remove=document.createElement('button');remove.className='danger';remove.textContent='このブロックを削除';remove.onclick=()=>{records.splice(i,1);render()};
-  head.append(number,format);card.append(head,label,area);
-  const actions=document.createElement('div');actions.className='actions';actions.append(remove);card.append(actions);list.append(card);
+ records.forEach((r,index)=>{
+  const card=el('section','record');
+  const top=el('div','recordtop');top.append(el('div','recordtitle','レコード '+(index+1)));
+  const del=el('button','danger','レコード削除');del.addEventListener('click',()=>{records.splice(index,1);render()});top.append(del);card.append(top);
+  const nl=el('label','label','認証コード');const number=el('input','number');number.placeholder='例：72763';number.value=r.number;number.addEventListener('input',()=>r.number=number.value);card.append(nl,number);
+  const tl=el('label','label','保存するデータ形式');tl.style.marginTop='13px';
+  const typebar=el('div','typebar');
+  const mode=optionSelect(r.mode,[['object','Object（キーと値）'],['array','Array（値のリスト）'],['text','Text（文章）']],v=>{r.mode=v;r.rows=[];r.text='';render()});
+  typebar.append(mode);card.append(tl,typebar);
+  if(r.mode==='text'){
+   const area=el('textarea','textpayload');area.placeholder='保存する文章を入力';area.value=r.text;area.addEventListener('input',()=>r.text=area.value);card.append(area);
+  }else{
+   const fields=el('div','fields');
+   r.rows.forEach((row,ri)=>{
+    const field=el('div','field'+(r.mode==='array'?' arrayfield':''));
+    if(r.mode==='object'){
+     const key=el('input','key');key.placeholder='キー（例：name）';key.value=row.key??'';key.addEventListener('input',()=>row.key=key.value);field.append(key);
+    }
+    const valuebox=el('div','valuebox');
+    const type=optionSelect(row.type,[['text','Text'],['number','Number'],['boolean','Boolean'],['null','Null'],['json','JSON（Object / Array）']],v=>{row.type=v;row.value=v==='boolean'?false:v==='null'?null:v==='json'?'{}':'';render()});
+    valuebox.append(type);
+    if(row.type==='boolean'){
+     valuebox.append(optionSelect(String(row.value===true||row.value==='true'),[['true','true'],['false','false']],v=>row.value=(v==='true')));
+    }else if(row.type==='null'){
+     valuebox.append(el('div','label','値は null として保存されます'));
+    }else if(row.type==='json'){
+     const area=el('textarea');area.value=typeof row.value==='string'?row.value:JSON.stringify(row.value,null,2);area.placeholder='{"key":"value"} または ["A","B"]';area.addEventListener('input',()=>row.value=area.value);valuebox.append(area);
+    }else{
+     const input=el('input');input.value=row.value??'';input.placeholder=row.type==='number'?'数値を入力':'値を入力';input.inputMode=row.type==='number'?'decimal':'text';input.addEventListener('input',()=>row.value=input.value);valuebox.append(input);
+    }
+    field.append(valuebox);
+    const rm=el('button','removefield','削除');rm.addEventListener('click',()=>{r.rows.splice(ri,1);render()});field.append(rm);
+    fields.append(field);
+   });
+   card.append(fields);
+   const add=el('div','addrow');
+   const addbtn=el('button','ghost',r.mode==='object'?'＋ キーと値を追加':'＋ 値を追加');
+   addbtn.addEventListener('click',()=>{r.rows.push(r.mode==='object'?{key:'',value:'',type:'text'}:{value:'',type:'text'});render()});add.append(addbtn);card.append(add);
+  }
+  list.append(card);
  });
 }
-function addRecord(){records.push({number:'',json:{}});render()}
-$('add').onclick=addRecord;
+function payloadOf(r){
+ if(r.mode==='text')return r.text;
+ if(r.mode==='array')return r.rows.map(readValue);
+ const obj={};
+ for(const row of r.rows){const key=String(row.key??'').trim();if(!key)throw Error('キーが空の項目があります');if(Object.prototype.hasOwnProperty.call(obj,key))throw Error('キーが重複しています：'+key);obj[key]=readValue(row)}
+ return obj;
+}
+$('add').onclick=()=>{records.push(makeRecord('',{}));render()};
 $('load').onclick=async()=>{
  if(!$('password').value){status('管理者パスワードを入力してください');return}
  status('読み込み中…');
- try{const res=await fetch('/api/records',{headers:auth()});const data=await res.json();if(!res.ok)throw Error(data.error||'読み込み失敗');records=data.records||[];render();status(records.length+'件読み込みました')}
- catch(e){status(e.message)}
+ try{
+  const res=await fetch('/api/records',{headers:headers()});const data=await res.json();
+  if(!res.ok)throw Error(data.error||'読み込み失敗');
+  records=(data.records||[]).map(x=>makeRecord(x.number,x.json));render();status(records.length+'件読み込みました');
+ }catch(e){status(e.message)}
 };
 $('save').onclick=async()=>{
  if(!$('password').value){status('管理者パスワードを入力してください');return}
  try{
-  const clean=records.map(r=>({number:String(r.number||'').trim(),json:r.json}));
-  const numbers=clean.map(r=>r.number);if(clean.some(r=>!r.number))throw Error('認証番号を入力してください');
-  if(new Set(numbers).size!==numbers.length)throw Error('認証番号が重複しています');
-  const res=await fetch('/api/records',{method:'PUT',headers:auth(),body:JSON.stringify({records:clean})});
-  const data=await res.json();if(!res.ok)throw Error(data.error||'保存失敗');status(data.count+'件保存しました');
+  const clean=records.map(r=>({number:String(r.number||'').trim(),json:payloadOf(r)}));
+  if(clean.some(r=>!r.number))throw Error('認証コードを入力してください');
+  const numbers=clean.map(r=>r.number);if(new Set(numbers).size!==numbers.length)throw Error('認証コードが重複しています');
+  status('保存中…');
+  const res=await fetch('/api/records',{method:'PUT',headers:headers(),body:JSON.stringify({records:clean})});
+  const data=await res.json();if(!res.ok)throw Error(data.error||'保存失敗');
+  status(data.count+'件保存しました');
  }catch(e){status(e.message)}
 };
-// 変更のたびに入力値を状態へ反映し、余計な再描画は行わない。
-$('password').addEventListener('input',()=>{status($('password').value?'パスワード入力中':'管理者パスワードを入力してください。')});
-addRecord();
-</script></body></html>
+render();
+</script>
+</body>
+</html>
