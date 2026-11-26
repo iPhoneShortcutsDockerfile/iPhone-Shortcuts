@@ -1,162 +1,71 @@
 <!doctype html>
-<html lang="ja">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>JSONレコード管理</title>
+<html lang="ja"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>POST辞書管理</title>
 <style>
-:root{color-scheme:dark;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#080b12;color:#f3f5fb}
-*{box-sizing:border-box}
-body{margin:0 auto;padding:22px 16px 60px;max-width:850px}
-h1{font-size:25px;margin:4px 0 5px}.sub{color:#9ba7bc;font-size:13px;margin:0 0 20px}
-.toolbar{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
-input,textarea,select,button{font:inherit;color:inherit;border:1px solid #30394b;border-radius:11px;background:#151b28;padding:11px}
-input,textarea{width:100%;min-width:0}
-button{cursor:pointer;background:#665cf0;border:0;font-weight:650}
-button.secondary{background:#252e40}button.danger{background:#783448}button.ghost{background:#1a2630;color:#b9f3d1}
-#password{flex:1;min-width:190px}
-#status{min-height:24px;color:#aebbd0;font-size:13px;margin:10px 0}
-.record{background:#111722;border:1px solid #2b3548;border-radius:18px;padding:16px;margin:14px 0;box-shadow:0 8px 24px #0002}
-.recordtop{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px}
-.recordtitle{font-size:14px;font-weight:750;color:#dce5f6}
-.number{margin-bottom:14px}
-.label{font-size:12px;color:#9eabc1;margin:0 0 7px;display:block}
-.typebar{display:flex;gap:8px;align-items:center;margin-bottom:12px}
-.typebar select{flex:1}
-.fields{display:grid;gap:9px}
-.field{background:#182131;border:1px solid #2b374c;border-radius:13px;padding:10px;display:grid;grid-template-columns:minmax(90px, .8fr) minmax(0,1.3fr) auto;gap:8px;align-items:start}
-.field.arrayfield{grid-template-columns:minmax(0,1fr) auto}
-.field input,.field select,.field textarea{padding:9px;border-radius:9px}
-.field textarea{min-height:72px;font-family:ui-monospace,monospace}
-.valuebox{display:grid;gap:6px;min-width:0}
-.removefield{background:#49303c;padding:8px 10px}
-.addrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
-.textpayload{min-height:110px;resize:vertical}
-.footer{display:flex;gap:9px;flex-wrap:wrap;margin-top:18px}
-.small{font-size:12px;color:#91a0b8;line-height:1.6;margin-top:18px}
-@media(max-width:560px){body{padding:17px 12px 48px}.toolbar>*{width:100%}.field{grid-template-columns:1fr auto}.field .key{grid-column:1/-1}.valuebox{grid-column:1}.removefield{grid-column:2;grid-row:1/3;align-self:center}.record{padding:13px}}
-</style>
-</head>
-<body>
-<h1>レコード管理</h1>
-<p class="sub">認証コードごとにPOSTデータを編集できます。保存するとFirestoreに反映されます。</p>
-
-<div class="toolbar">
-  <input id="password" type="password" placeholder="管理者パスワード" autocomplete="current-password">
-  <button id="load" class="secondary">読み込み</button>
-  <button id="save">すべて保存</button>
-</div>
-<div id="status">管理者パスワードを入力して読み込んでください。</div>
-<div id="records"></div>
-<div class="footer">
-  <button id="add" class="secondary">＋ 認証コードを追加</button>
-</div>
-<p class="small">Object・Array・Textに対応。Objectではキーと値を個別に追加でき、Arrayでは値を順番に追加できます。保存時は一覧全体を置き換えます。既存レコードを残したい場合は、読み込み後に編集してください。</p>
-
+:root{color-scheme:dark;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#090d15;color:#f3f5fb}
+*{box-sizing:border-box}body{max-width:900px;margin:auto;padding:22px 15px 60px}h1{font-size:25px;margin:4px 0}.sub{font-size:13px;color:#9aa8bf;margin:5px 0 20px}
+.toolbar,.actions{display:flex;gap:9px;flex-wrap:wrap;align-items:center}input,select{font:inherit;color:inherit;min-width:0;border:1px solid #303b50;border-radius:10px;background:#151e2d;padding:10px;width:100%}
+button{font:inherit;color:inherit;border:0;border-radius:10px;padding:10px 13px;cursor:pointer;background:#665cf0;font-weight:650}button.secondary{background:#27334a}button.danger{background:#713448}button.add{background:#244d40;color:#c5f8df}
+#password{flex:1;min-width:190px}#status{min-height:24px;color:#aab8ce;font-size:13px;margin:12px 0}.rule{background:#111925;border:1px solid #2c384d;border-radius:18px;padding:15px;margin:14px 0}.rulehead{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px}.rule-title{font-weight:750;font-size:14px}
+.section{border:1px solid #354158;border-radius:14px;overflow:hidden;background:#0d1420;margin-top:13px}.section-title{padding:11px 12px;background:#1a2638;font-size:13px;color:#d2def1;font-weight:750}
+.dict-body{padding:8px}.dict-item{border:1px solid #2b3a51;background:#111b2a;border-radius:11px;padding:9px;margin:7px 0}.item-head{display:grid;grid-template-columns:minmax(0,1fr) 112px auto;gap:7px;align-items:center}.item-head input{background:#0b1320}.item-head select{background:#202d42}.text-value{margin-top:8px}.nested{margin:9px 0 0 12px;padding-left:10px;border-left:2px solid #40516c}.nested>.nested-title{font-size:11px;color:#93a8c6;margin-bottom:5px}.dict-actions{padding:8px 0 2px}.empty{font-size:12px;color:#8191aa;padding:6px}.hint{font-size:12px;color:#91a0b8;line-height:1.7;margin-top:18px}
+@media(max-width:560px){body{padding:16px 11px 50px}.toolbar>*{width:100%}.rule{padding:11px}.item-head{grid-template-columns:minmax(0,1fr) 88px auto;gap:5px}.item-head input,.item-head select{padding:9px 7px;font-size:13px}.item-head button{padding:8px 10px}.nested{margin-left:7px;padding-left:8px}}
+</style></head><body>
+<h1>POST辞書管理</h1><p class="sub">iPhoneの「辞書」と同じように、値をTextまたは辞書に設定できます。辞書の中にさらに辞書を作成できます。</p>
+<div class="toolbar"><input id="password" type="password" placeholder="管理者パスワード" autocomplete="current-password"><button id="load" class="secondary">読み込み</button><button id="save">すべて保存</button></div>
+<div id="status">管理者パスワードを入力して読み込んでください。</div><div id="rules"></div><div class="actions"><button id="add" class="secondary">＋ 辞書を追加</button></div>
+<p class="hint">各項目は「キー」と「値」で構成されます。値の種類をText／辞書から選択できます。POST側に入れ子の辞書を設定した場合、受信したJSON内の同じ階層・キー・値が一致するか確認します。返却内容は設定した入れ子構造のままJSONで返します。</p>
 <script>
-const $=id=>document.getElementById(id), list=$('records');
-let records=[];
+const $=id=>document.getElementById(id),root=$('rules');let rules=[];
+const PASSWORD_STORAGE_KEY='post_dictionary_admin_password',passwordInput=$('password');
 const status=s=>$('status').textContent=s;
-const headers=()=>({'Authorization':$('password').value,'Content-Type':'application/json'});
-const clone=v=>JSON.parse(JSON.stringify(v));
-function kind(v){if(v===null)return'null';if(Array.isArray(v)||typeof v==='object')return'json';if(typeof v==='number')return'number';if(typeof v==='boolean')return'boolean';return'text'}
-function rowsFrom(v){
- if(Array.isArray(v))return v.map(value=>({value,type:kind(value)}));
- if(v&&typeof v==='object')return Object.entries(v).map(([key,value])=>({key,value,type:kind(value)}));
- return [];
-}
-function makeRecord(number='',payload={}){return{number:String(number),mode:typeof payload==='string'?'text':Array.isArray(payload)?'array':'object',text:typeof payload==='string'?payload:'',rows:rowsFrom(payload)}}
-function el(tag,cls,text){const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n}
-function optionSelect(value,opts,onchange){
- const s=el('select');opts.forEach(([v,t])=>{const o=el('option','',t);o.value=v;s.append(o)});s.value=value;s.addEventListener('change',()=>onchange(s.value));return s;
-}
-function readValue(row){
- if(row.type==='null')return null;
- if(row.type==='number'){const n=Number(row.value);if(!Number.isFinite(n))throw Error('数値として正しくない値があります');return n}
- if(row.type==='boolean')return row.value===true||row.value==='true';
- if(row.type==='json'){if(typeof row.value==='string'){try{return JSON.parse(row.value)}catch(e){throw Error('JSON形式の値を確認してください')}}return row.value}
- return String(row.value??'');
+passwordInput.value=localStorage.getItem(PASSWORD_STORAGE_KEY)||'';
+passwordInput.addEventListener('input',()=>localStorage.setItem(PASSWORD_STORAGE_KEY,passwordInput.value));
+const headers=()=>({'Authorization':passwordInput.value,'Content-Type':'application/json'});
+const make=(post={},response={})=>({post:structuredClone(post),response:structuredClone(response)});
+function el(tag,cls,txt){const n=document.createElement(tag);if(cls)n.className=cls;if(txt!==undefined)n.textContent=txt;return n}
+function renderDict(obj,onChange,depth=0){
+ const body=el('div','dict-body');
+ const entries=Object.entries(obj);
+ if(!entries.length)body.append(el('div','empty','項目はありません'));
+ for(const [originalKey,originalValue] of entries){
+  const item=el('div','dict-item'),head=el('div','item-head');
+  const key=el('input');key.placeholder='キー';key.value=originalKey;key.setAttribute('aria-label','キー');
+  const type=el('select');type.setAttribute('aria-label','値の種類');
+  [['text','Text'],['dict','辞書']].forEach(([v,t])=>{const o=el('option','',t);o.value=v;type.append(o)});
+  type.value=originalValue!==null&&typeof originalValue==='object'&&!Array.isArray(originalValue)?'dict':'text';
+  const del=el('button','danger','−');del.title='項目を削除';
+  key.addEventListener('change',()=>{const next=key.value.trim();if(!next){status('キーを入力してください');key.value=originalKey;return}if(next!==originalKey&&Object.prototype.hasOwnProperty.call(obj,next)){status('同じ階層に同じキーがあります');key.value=originalKey;return}const pairs=Object.entries(obj).map(([k,v])=>[k===originalKey?next:k,v]);for(const k of Object.keys(obj))delete obj[k];for(const [k,v] of pairs)obj[k]=v;onChange()});
+  del.onclick=()=>{delete obj[originalKey];onChange()};
+  type.addEventListener('change',()=>{obj[originalKey]=type.value==='dict'?{}:'';onChange()});
+  head.append(key,type,del);item.append(head);
+  if(type.value==='text'){
+   const value=el('input','text-value');value.placeholder='テキスト';value.value=String(originalValue??'');value.addEventListener('input',()=>{obj[originalKey]=value.value});item.append(value);
+  }else{
+   const nested=el('div','nested');nested.append(el('div','nested-title','辞書の内容'));
+   nested.append(renderDict(originalValue, onChange, depth+1));item.append(nested);
+  }
+  body.append(item);
+ }
+ const actions=el('div','dict-actions'),add=el('button','add','＋ 追加');
+ add.onclick=()=>{let k='';let n=1;while(Object.prototype.hasOwnProperty.call(obj,k))k='新しいキー'+n++;obj[k]='';onChange()};
+ actions.append(add);body.append(actions);return body;
 }
 function render(){
- list.innerHTML='';
- records.forEach((r,index)=>{
-  const card=el('section','record');
-  const top=el('div','recordtop');top.append(el('div','recordtitle','レコード '+(index+1)));
-  const del=el('button','danger','レコード削除');del.addEventListener('click',()=>{records.splice(index,1);render()});top.append(del);card.append(top);
-  const nl=el('label','label','認証コード');const number=el('input','number');number.placeholder='例：72763';number.value=r.number;number.addEventListener('input',()=>r.number=number.value);card.append(nl,number);
-  const quickAdd=el('button','ghost','＋ 追加');
-  quickAdd.style.marginTop='9px';
-  quickAdd.addEventListener('click',()=>{
-   if(r.mode==='text'){r.mode='object';r.text='';r.rows=[];}
-   if(r.mode==='object')r.rows.push({key:'',value:'',type:'text'});
-   else r.rows.push({value:'',type:'text'});
-   render();
-  });
-  card.append(quickAdd);
-  const tl=el('label','label','保存するデータ形式');tl.style.marginTop='13px';
-  const typebar=el('div','typebar');
-  const mode=optionSelect(r.mode,[['object','Object（キーと値）'],['array','Array（値のリスト）'],['text','Text（文章）']],v=>{r.mode=v;r.rows=[];r.text='';render()});
-  typebar.append(mode);card.append(tl,typebar);
-  if(r.mode==='text'){
-   const area=el('textarea','textpayload');area.placeholder='保存する文章を入力';area.value=r.text;area.addEventListener('input',()=>r.text=area.value);card.append(area);
-  }else{
-   const fields=el('div','fields');
-   r.rows.forEach((row,ri)=>{
-    const field=el('div','field'+(r.mode==='array'?' arrayfield':''));
-    if(r.mode==='object'){
-     const key=el('input','key');key.placeholder='キー（例：name）';key.value=row.key??'';key.addEventListener('input',()=>row.key=key.value);field.append(key);
-    }
-    const valuebox=el('div','valuebox');
-    const type=optionSelect(row.type,[['text','Text'],['number','Number'],['boolean','Boolean'],['null','Null'],['json','JSON（Object / Array）']],v=>{row.type=v;row.value=v==='boolean'?false:v==='null'?null:v==='json'?'{}':'';render()});
-    valuebox.append(type);
-    if(row.type==='boolean'){
-     valuebox.append(optionSelect(String(row.value===true||row.value==='true'),[['true','true'],['false','false']],v=>row.value=(v==='true')));
-    }else if(row.type==='null'){
-     valuebox.append(el('div','label','値は null として保存されます'));
-    }else if(row.type==='json'){
-     const area=el('textarea');area.value=typeof row.value==='string'?row.value:JSON.stringify(row.value,null,2);area.placeholder='{"key":"value"} または ["A","B"]';area.addEventListener('input',()=>row.value=area.value);valuebox.append(area);
-    }else{
-     const input=el('input');input.value=row.value??'';input.placeholder=row.type==='number'?'数値を入力':'値を入力';input.inputMode=row.type==='number'?'decimal':'text';input.addEventListener('input',()=>row.value=input.value);valuebox.append(input);
-    }
-    field.append(valuebox);
-    const rm=el('button','removefield','削除');rm.addEventListener('click',()=>{r.rows.splice(ri,1);render()});field.append(rm);
-    fields.append(field);
-   });
-   card.append(fields);
+ root.innerHTML='';
+ rules.forEach((rule,index)=>{
+  const card=el('section','rule'),head=el('div','rulehead');head.append(el('div','rule-title','辞書 '+(index+1)));
+  const del=el('button','danger','辞書を削除');del.onclick=()=>{rules.splice(index,1);render()};head.append(del);card.append(head);
+  for(const [type,title] of [['post','POST'],['response','返却する内容']]){
+   const section=el('div','section');section.append(el('div','section-title',title));section.append(renderDict(rule[type],()=>render()));card.append(section);
   }
-  list.append(card);
+  root.append(card);
  });
 }
-function payloadOf(r){
- if(r.mode==='text')return r.text;
- if(r.mode==='array')return r.rows.map(readValue);
- const obj={};
- for(const row of r.rows){const key=String(row.key??'').trim();if(!key)throw Error('キーが空の項目があります');if(Object.prototype.hasOwnProperty.call(obj,key))throw Error('キーが重複しています：'+key);obj[key]=readValue(row)}
- return obj;
-}
-$('add').onclick=()=>{records.push(makeRecord('',{}));render()};
-$('load').onclick=async()=>{
- if(!$('password').value){status('管理者パスワードを入力してください');return}
- status('読み込み中…');
- try{
-  const res=await fetch('/api/records',{headers:headers()});const data=await res.json();
-  if(!res.ok)throw Error(data.error||'読み込み失敗');
-  records=(data.records||[]).map(x=>makeRecord(x.number,x.json));render();status(records.length+'件読み込みました');
- }catch(e){status(e.message)}
-};
-$('save').onclick=async()=>{
- if(!$('password').value){status('管理者パスワードを入力してください');return}
- try{
-  const clean=records.map(r=>({number:String(r.number||'').trim(),json:payloadOf(r)}));
-  if(clean.some(r=>!r.number))throw Error('認証コードを入力してください');
-  const numbers=clean.map(r=>r.number);if(new Set(numbers).size!==numbers.length)throw Error('認証コードが重複しています');
-  status('保存中…');
-  const res=await fetch('/api/records',{method:'PUT',headers:headers(),body:JSON.stringify({records:clean})});
-  const data=await res.json();if(!res.ok)throw Error(data.error||'保存失敗');
-  status(data.count+'件保存しました');
- }catch(e){status(e.message)}
-};
+function validDictionary(value){return value&&typeof value==='object'&&!Array.isArray(value)&&Object.entries(value).every(([k,v])=>k.trim()!==''&&(typeof v==='string'||validDictionary(v)))}
+$('add').onclick=()=>{rules.push(make());render()};
+$('load').onclick=async()=>{if(!passwordInput.value){status('管理者パスワードを入力してください');return}status('読み込み中…');try{const res=await fetch('/api/records',{headers:headers()}),data=await res.json();if(!res.ok)throw Error(data.error||'読み込み失敗');rules=(data.records||[]).map(x=>make(x.post||{},x.response||{}));render();status(rules.length+'件読み込みました')}catch(e){status(e.message)}};
+$('save').onclick=async()=>{if(!passwordInput.value){status('管理者パスワードを入力してください');return}for(let i=0;i<rules.length;i++){for(const [type,title] of [['post','POST'],['response','返却する内容']]){if(!validDictionary(rules[i][type])||!Object.keys(rules[i][type]).length){status('辞書 '+(i+1)+' の'+title+'に有効な項目を1つ以上設定してください');return}}}status('保存中…');try{const res=await fetch('/api/records',{method:'PUT',headers:headers(),body:JSON.stringify({records:rules})}),data=await res.json();if(!res.ok)throw Error(data.error||'保存失敗');status(data.count+'件の辞書を保存しました')}catch(e){status(e.message)}};
 render();
-</script>
-</body>
-</html>
+</script></body></html>
