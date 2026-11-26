@@ -9,24 +9,20 @@ from firebase_admin import credentials, firestore
 
 app = Flask(__name__, static_folder="static")
 db = None
+COLLECTION = "shortcut_json_records"
 
 
 def init_firestore():
     global db
-
     if db is not None:
         return db
-
     raw = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON", "").strip()
     if not raw:
         raise RuntimeError("FIREBASE_SERVICE_ACCOUNT_JSON is not configured")
-
     info = json.loads(raw)
-
     if not firebase_admin._apps:
         cred = credentials.Certificate(info)
         firebase_admin.initialize_app(cred, {"projectId": info.get("project_id")})
-
     database_id = os.environ.get("FIRESTORE_DATABASE_ID", "").strip()
     db = firestore.client(database_id=database_id) if database_id else firestore.client()
     return db
@@ -34,11 +30,8 @@ def init_firestore():
 
 def password_ok(value):
     expected = os.environ.get("ADMIN_PASSWORD", "")
-    return (
-        bool(expected)
-        and isinstance(value, str)
-        and hmac.compare_digest(value.encode("utf-8"), expected.encode("utf-8"))
-    )
+    return bool(expected and isinstance(value, str) and
+                hmac.compare_digest(value.encode("utf-8"), expected.encode("utf-8")))
 
 
 def request_body():
@@ -48,19 +41,12 @@ def request_body():
 
 def supplied_password():
     auth = request.headers.get("Authorization", "").strip()
-
-    # Bearer形式と、パスワードを直接指定する形式の両方に対応
     if auth:
-        if auth.lower().startswith("bearer "):
-            return auth[7:].strip()
-        return auth
-
+        return auth[7:].strip() if auth.lower().startswith("bearer ") else auth
     body = request_body()
-    return (
-        request.headers.get("X-Admin-Password")
-        or request.args.get("admin_password")
-        or body.get("admin_password", "")
-    )
+    return (request.headers.get("X-Admin-Password")
+            or request.args.get("admin_password")
+            or body.get("admin_password", ""))
 
 
 def admin_required(fn):
@@ -72,9 +58,55 @@ def admin_required(fn):
     return wrapped
 
 
-def valid_payload(value):
-    # 保存対象はObject / Array / Text
-    return isinstance(value, (dict, list, str))
+def valid_dictionary(value):
+    """Allow nested dictionaries whose leaf values are all text."""
+    return (
+        isinstance(value, dict)
+        and all(
+            isinstance(k, str)
+            and (isinstance(v, str) or valid_dictionary(v))
+            for k, v in value.items()
+        )
+    )
+
+
+def dictionary_matches(expected, incoming):
+    """Match configured keys recursively; extra incoming keys are allowed."""
+    if not isinstance(expected, dict) or not isinstance(incoming, dict):
+        return False
+    for key, value in expected.items():
+        if key not in incoming:
+            return False
+        actual = incoming[key]
+        if isinstance(value, dict):
+            if not dictionary_matches(value, actual):
+                return False
+        elif not isinstance(actual, str) or actual != value:
+            return False
+    return True
+
+
+def normalize_rule(value):
+    if not isinstance(value, dict):
+        raise ValueError("各ルールはオブジェクトで指定してください")
+    post = value.get("post", {})
+    response = value.get("response", {})
+    if not valid_dictionary(post):
+        raise ValueError("POSTはTextのキーと値を持つ辞書にしてください")
+    if not valid_dictionary(response):
+        raise ValueError("返却する内容はTextのキーと値を持つ辞書にしてください")
+    if not post:
+        raise ValueError("POSTの項目を1つ以上設定してください")
+    if not response:
+        raise ValueError("返却する内容を1つ以上設定してください")
+    return {"post": post, "response": response}
+
+
+def flatten_keys(value):
+    for key, child in value.items():
+        yield key
+        if isinstance(child, dict):
+            yield from flatten_keys(child)
 
 
 @app.get("/health")
@@ -84,7 +116,7 @@ def health():
 
 @app.get("/")
 def home():
-    return jsonify({"service": "iPhone Shortcut JSON Backend", "admin": "/admin.site"})
+    return jsonify({"service": "POST Dictionary Backend", "admin": "/admin.site"})
 
 
 @app.get("/admin.site")
@@ -97,12 +129,14 @@ def admin():
 @admin_required
 def get_records():
     try:
-        store = init_firestore().collection("shortcut_json_records")
+        store = init_firestore().collection(COLLECTION)
         records = []
         for doc in store.stream():
             data = doc.to_dict() or {}
-            records.append({"number": doc.id, "json": data.get("payload")})
-        records.sort(key=lambda x: x["number"])
+            # Ignore old auth-code records: this version starts with POST rules only.
+            if isinstance(data.get("post"), dict) and isinstance(data.get("response"), dict):
+                records.append({"id": doc.id, "post": data["post"], "response": data["response"]})
+        records.sort(key=lambda x: x["id"])
         return jsonify({"records": records})
     except Exception as e:
         app.logger.exception("Failed to load records")
@@ -112,55 +146,37 @@ def get_records():
 @app.put("/api/records")
 @admin_required
 def put_records():
-    body = request_body()
-    records = body.get("records")
-
-    if not isinstance(records, list):
+    raw_records = request_body().get("records")
+    if not isinstance(raw_records, list):
         return jsonify({"error": "records は配列で指定してください"}), 400
 
-    seen = set()
     prepared = []
-
-    # 先に全件検証し、不正データで既存データを消さない
-    for item in records:
-        if not isinstance(item, dict):
-            return jsonify({"error": "各項目はオブジェクトで指定してください"}), 400
-
-        number = str(item.get("number", "")).strip()
-        if not number or len(number) > 200:
-            return jsonify({"error": "認証番号が空、または長すぎます"}), 400
-        if number in seen:
-            return jsonify({"error": "認証番号が重複しています: " + number}), 400
-        if "json" not in item or not valid_payload(item["json"]):
-            return jsonify({"error": "json はObject・Array・Textで指定してください"}), 400
-
-        seen.add(number)
-        prepared.append((number, item["json"]))
+    try:
+        for item in raw_records:
+            prepared.append(normalize_rule(item))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
 
     try:
-        store = init_firestore().collection("shortcut_json_records")
-        operations = []
-
-        for number, payload in prepared:
-            operations.append(("set", store.document(number), {"payload": payload}))
-
-        for doc in store.stream():
-            if doc.id not in seen:
-                operations.append(("delete", store.document(doc.id), None))
-
-        # Firestore batchの上限を避けて450件ずつ反映
-        for start in range(0, len(operations), 450):
+        store = init_firestore().collection(COLLECTION)
+        existing = list(store.stream())
+        # Replace the rule set completely; IDs are generated by Firestore.
+        for start in range(0, len(existing), 450):
             batch = init_firestore().batch()
-            for operation, ref, data in operations[start:start + 450]:
-                if operation == "set":
-                    batch.set(ref, data)
-                else:
-                    batch.delete(ref)
+            for doc in existing[start:start + 450]:
+                batch.delete(doc.reference)
+            batch.commit()
+
+        for start in range(0, len(prepared), 450):
+            batch = init_firestore().batch()
+            for rule in prepared[start:start + 450]:
+                ref = store.document()
+                batch.set(ref, rule)
             batch.commit()
 
         return jsonify({"ok": True, "count": len(prepared)})
     except Exception as e:
-        app.logger.exception("Failed to save records")
+        app.logger.exception("Failed to replace rules")
         return jsonify({"error": str(e)}), 500
 
 
@@ -168,44 +184,49 @@ def put_records():
 @admin_required
 def shortcut_write():
     body = request_body()
-    number = str(body.get("number", "")).strip()
-    payload = body.get("json", body.get("payload"))
-
-    if not number:
-        return jsonify({"error": "number が必要です"}), 400
-    if not valid_payload(payload):
-        return jsonify({"error": "json はObject・Array・Textで指定してください"}), 400
-
     try:
-        init_firestore().collection("shortcut_json_records").document(number).set(
-            {"payload": payload}
-        )
-        return jsonify({"ok": True, "number": number, "replaced": True})
+        rule = normalize_rule(body)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    try:
+        ref = init_firestore().collection(COLLECTION).document()
+        ref.set(rule)
+        return jsonify({"ok": True, "id": ref.id})
     except Exception as e:
-        app.logger.exception("Failed to write shortcut JSON")
+        app.logger.exception("Failed to add rule")
         return jsonify({"error": str(e)}), 500
 
 
 @app.post("/api/lookup")
 def lookup():
-    body = request_body()
-    number = str(body.get("number", body.get("auth_number", ""))).strip()
-
-    if not number:
-        return jsonify({"error": "number が必要です"}), 400
+    incoming = request_body()
+    if not incoming:
+        return jsonify({"error": "POSTの辞書をJSONで送信してください"}), 400
 
     try:
-        doc = (
-            init_firestore()
-            .collection("shortcut_json_records")
-            .document(number)
-            .get()
-        )
-        if not doc.exists:
-            return jsonify({"error": "該当する認証番号がありません"}), 404
-        return jsonify((doc.to_dict() or {}).get("payload"))
+        store = init_firestore().collection(COLLECTION)
+        matches = []
+        for doc in store.stream():
+            rule = doc.to_dict() or {}
+            expected = rule.get("post")
+            response = rule.get("response")
+            if not valid_text_dictionary(expected) or not valid_dictionary(response):
+                continue
+            # A rule matches when every configured POST key/value is present and identical.
+            if expected and all(
+                isinstance(incoming.get(key), str) and incoming.get(key) == value
+                for key, value in expected.items()
+            ):
+                matches.append((len(expected), doc.id, response))
+
+        if not matches:
+            return jsonify({"error": "一致するPOST設定がありません"}), 404
+
+        # Prefer the most specific matching dictionary; stable ID tie-breaker.
+        matches.sort(key=lambda item: (-item[0], item[1]))
+        return jsonify(matches[0][2])
     except Exception as e:
-        app.logger.exception("Failed to lookup JSON")
+        app.logger.exception("Failed to lookup POST dictionary")
         return jsonify({"error": str(e)}), 500
 
 
