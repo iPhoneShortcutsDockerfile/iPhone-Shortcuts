@@ -34,3 +34,11 @@
 Firestore collection: `shortcut_json_records`
 document ID: 認証番号
 field: `payload`
+
+
+## Updated API behavior
+
+- `Authorization: <ADMIN_PASSWORD>` and `Authorization: Bearer <ADMIN_PASSWORD>` are both supported.
+- `POST /api/shortcuts` accepts `json` as an Object, Array, or Text string.
+- `PUT /api/records` accepts `{"records":[{"number":"...","json":...}]}`; each `json` may be an Object, Array, or Text string.
+- `/admin.site` provides a visual record editor for authentication codes and individual POST key/value fields.
